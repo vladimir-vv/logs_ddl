@@ -20,6 +20,18 @@ CREATE TABLE @extschema@.logs (
 );
 CREATE INDEX ON @extschema@.logs USING btree (creation_date);
 
+CREATE TABLE @extschema@.skip_rules (
+  type_id int NOT NULL,
+  rule varchar(64) NOT NULL,
+  CONSTRAINT skip_rules_pkey PRIMARY KEY (type_id, rule)
+);
+COMMENT ON COLUMN @extschema@.skip_rules.type_id IS '1 - schema_name
+2 - command_tag
+3 - current_query (regexp)';
+
+INSERT INTO @extschema@.skip_rules VALUES (1, 'pg_temp');
+INSERT INTO @extschema@.skip_rules VALUES (1, 'repack');
+INSERT INTO @extschema@.skip_rules VALUES (2, 'REFRESH MATERIALIZED VIEW');
 
 CREATE OR REPLACE FUNCTION @extschema@.write_ddl()
  RETURNS event_trigger
@@ -33,8 +45,8 @@ DECLARE
 BEGIN
   FOR v_obj IN SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
-    IF ( v_obj.schema_name NOT IN ('pg_temp', 'repack')
-				AND v_obj.command_tag NOT IN ('REFRESH MATERIALIZED VIEW')
+    IF (NOT EXISTS (SELECT 1 FROM @extschema@.skip_rules WHERE type_id=1 AND rule=v_obj.schema_name)
+        AND NOT EXISTS (SELECT 1 FROM @extschema@.skip_rules WHERE type_id=2 AND rule=v_obj.command_tag)
 			 ) THEN
       CASE (SELECT relname FROM pg_class WHERE oid=v_obj.classid)
         WHEN 'pg_proc' THEN
