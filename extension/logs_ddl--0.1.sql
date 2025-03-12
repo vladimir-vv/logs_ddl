@@ -33,10 +33,13 @@ INSERT INTO @extschema@.skip_rules VALUES (1, 'pg_temp');
 INSERT INTO @extschema@.skip_rules VALUES (1, 'repack');
 INSERT INTO @extschema@.skip_rules VALUES (2, 'REFRESH MATERIALIZED VIEW');
 
+SELECT pg_catalog.pg_extension_config_dump('@extschema@.skip_rules', '');
+
+
 CREATE OR REPLACE FUNCTION @extschema@.write_ddl()
- RETURNS event_trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
+RETURNS event_trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
 AS $function$
 DECLARE
  v_obj record;
@@ -74,13 +77,14 @@ $function$;
 CREATE OR REPLACE FUNCTION @extschema@.write_drop()
 RETURNS event_trigger
 LANGUAGE plpgsql
+SECURITY DEFINER
 AS $function$
 DECLARE
  v_obj record;
 BEGIN
   FOR v_obj IN SELECT * FROM pg_event_trigger_dropped_objects()
   LOOP
-    IF ( v_obj.schema_name NOT IN ('pg_temp', 'repack') ) THEN
+    IF (NOT EXISTS (SELECT 1 FROM @extschema@.skip_rules WHERE type_id=1 AND rule=v_obj.schema_name)) THEN
       INSERT INTO @extschema@.logs(command_tag, object_type, schema_name, object_identity, in_extension,
         tg_event, tg_tag, username, client_addr, query_text)
       VALUES('DROP', v_obj.object_type, v_obj.schema_name, v_obj.object_identity, false,
@@ -91,7 +95,5 @@ END;
 $function$;
 
 CREATE EVENT TRIGGER @extschema@_ddl ON ddl_command_end EXECUTE FUNCTION @extschema@.write_ddl();
-ALTER EVENT TRIGGER @extschema@_ddl OWNER TO root;
 
 CREATE EVENT TRIGGER @extschema@_drop ON sql_drop EXECUTE FUNCTION @extschema@.write_drop();
-ALTER EVENT TRIGGER @extschema@_drop OWNER TO root;
