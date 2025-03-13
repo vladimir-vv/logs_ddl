@@ -1,5 +1,4 @@
 
-\echo
 CREATE TABLE @extschema@.logs (
   id bigint NOT NULL PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
   creation_date timestamp with time zone DEFAULT now() NOT NULL,
@@ -20,20 +19,24 @@ CREATE TABLE @extschema@.logs (
 );
 CREATE INDEX ON @extschema@.logs USING btree (creation_date);
 
+SELECT pg_catalog.pg_extension_config_dump('@extschema@.logs', '');
+
+
 CREATE TABLE @extschema@.skip_rules (
   type_id int NOT NULL,
   rule varchar(64) NOT NULL,
+  std_entry boolean DEFAULT false,
   CONSTRAINT skip_rules_pkey PRIMARY KEY (type_id, rule)
 );
 COMMENT ON COLUMN @extschema@.skip_rules.type_id IS '1 - schema_name
 2 - command_tag
 3 - current_query (regexp)';
 
-INSERT INTO @extschema@.skip_rules VALUES (1, 'pg_temp');
-INSERT INTO @extschema@.skip_rules VALUES (1, 'repack');
-INSERT INTO @extschema@.skip_rules VALUES (2, 'REFRESH MATERIALIZED VIEW');
+INSERT INTO @extschema@.skip_rules VALUES (1, 'pg_temp', true);
+INSERT INTO @extschema@.skip_rules VALUES (1, 'repack', true);
+INSERT INTO @extschema@.skip_rules VALUES (2, 'REFRESH MATERIALIZED VIEW', true);
 
-SELECT pg_catalog.pg_extension_config_dump('@extschema@.skip_rules', '');
+SELECT pg_catalog.pg_extension_config_dump('@extschema@.skip_rules', 'WHERE NOT std_entry');
 
 
 CREATE OR REPLACE FUNCTION @extschema@.write_ddl()
@@ -95,5 +98,4 @@ END;
 $function$;
 
 CREATE EVENT TRIGGER @extschema@_ddl ON ddl_command_end EXECUTE FUNCTION @extschema@.write_ddl();
-
 CREATE EVENT TRIGGER @extschema@_drop ON sql_drop EXECUTE FUNCTION @extschema@.write_drop();
