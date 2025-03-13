@@ -38,4 +38,5 @@ CREATE EXTENSION logs_ddl;
 - Clean
 ```sh
 docker-compose down
+docker volume rm logs_ddl_postgres_data
 ```
