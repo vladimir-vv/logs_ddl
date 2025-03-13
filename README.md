@@ -39,7 +39,3 @@ CREATE EXTENSION logs_ddl;
 ```sh
 docker-compose down
 ```
-
-
-TODO:
-- do not remove logs table when drop
