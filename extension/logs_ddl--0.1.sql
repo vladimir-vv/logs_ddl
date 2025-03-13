@@ -53,7 +53,8 @@ BEGIN
   LOOP
     IF (NOT EXISTS (SELECT 1 FROM @extschema@.skip_rules WHERE type_id=1 AND rule=v_obj.schema_name)
         AND NOT EXISTS (SELECT 1 FROM @extschema@.skip_rules WHERE type_id=2 AND rule=v_obj.command_tag)
-      ) THEN
+        AND NOT EXISTS (SELECT 1 FROM @extschema@.skip_rules WHERE type_id=3 AND current_query() ~* rule)
+    ) THEN
       CASE (SELECT relname FROM pg_class WHERE oid=v_obj.classid)
         WHEN 'pg_proc' THEN
           SELECT INTO v_save_obj row_to_json(q1)::text FROM (SELECT * FROM pg_proc WHERE oid=v_obj.objid) q1;
@@ -87,7 +88,9 @@ DECLARE
 BEGIN
   FOR v_obj IN SELECT * FROM pg_event_trigger_dropped_objects()
   LOOP
-    IF (NOT EXISTS (SELECT 1 FROM @extschema@.skip_rules WHERE type_id=1 AND rule=v_obj.schema_name)) THEN
+    IF (NOT EXISTS (SELECT 1 FROM @extschema@.skip_rules WHERE type_id=1 AND rule=v_obj.schema_name)
+        AND NOT EXISTS (SELECT 1 FROM @extschema@.skip_rules WHERE type_id=3 AND current_query() ~* rule)
+    ) THEN
       INSERT INTO @extschema@.logs(command_tag, object_type, schema_name, object_identity, in_extension,
         tg_event, tg_tag, username, client_addr, query_text)
       VALUES('DROP', v_obj.object_type, v_obj.schema_name, v_obj.object_identity, false,
