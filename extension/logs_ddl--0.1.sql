@@ -45,15 +45,15 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $function$
 DECLARE
- v_obj record;
- v_save_obj text:=NULL;
- v_save_obj_def text:=NULL;
+  v_obj record;
+  v_save_obj text:=NULL;
+  v_save_obj_def text:=NULL;
 BEGIN
   FOR v_obj IN SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
     IF (NOT EXISTS (SELECT 1 FROM @extschema@.skip_rules WHERE type_id=1 AND rule=v_obj.schema_name)
         AND NOT EXISTS (SELECT 1 FROM @extschema@.skip_rules WHERE type_id=2 AND rule=v_obj.command_tag)
-			 ) THEN
+      ) THEN
       CASE (SELECT relname FROM pg_class WHERE oid=v_obj.classid)
         WHEN 'pg_proc' THEN
           SELECT INTO v_save_obj row_to_json(q1)::text FROM (SELECT * FROM pg_proc WHERE oid=v_obj.objid) q1;
@@ -83,7 +83,7 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $function$
 DECLARE
- v_obj record;
+  v_obj record;
 BEGIN
   FOR v_obj IN SELECT * FROM pg_event_trigger_dropped_objects()
   LOOP
@@ -91,11 +91,53 @@ BEGIN
       INSERT INTO @extschema@.logs(command_tag, object_type, schema_name, object_identity, in_extension,
         tg_event, tg_tag, username, client_addr, query_text)
       VALUES('DROP', v_obj.object_type, v_obj.schema_name, v_obj.object_identity, false,
-        TG_EVENT, TG_TAG, current_user::text, inet_client_addr(), current_query() );
+        TG_EVENT, TG_TAG, SESSION_USER::text, inet_client_addr(), current_query() );
     END IF;
   END LOOP;
 END;
 $function$;
+
+CREATE OR REPLACE FUNCTION @extschema@.write_ddl_manual(i_sql text)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $function$
+DECLARE
+  err_code text;
+  msg_text text;
+  exc_context text;
+  msg_detail text;
+  exc_hint text;
+BEGIN
+  IF ( COALESCE(i_sql, '') = '') THEN
+    RETURN false;
+  END IF;
+
+  BEGIN
+    EXECUTE i_sql;
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS
+    err_code = RETURNED_SQLSTATE,
+    msg_text = MESSAGE_TEXT,
+    exc_context = PG_CONTEXT,
+    msg_detail = PG_EXCEPTION_DETAIL,
+    exc_hint = PG_EXCEPTION_HINT;
+
+    RAISE NOTICE 'ERROR CODE: % MESSAGE TEXT: % CONTEXT: % DETAIL: % HINT: %',
+    err_code, msg_text, exc_context, msg_detail, exc_hint;
+
+    RETURN false;
+  END;
+
+  INSERT INTO @extschema@.logs(command_tag, object_type, schema_name, object_identity, in_extension,
+    tg_event, tg_tag, username, client_addr, query_text, classid, objid, object, object_def)
+    VALUES('Manual SQL', 'SQL statement', 'public', 'none', 'f',
+    'manual', 'SQL', SESSION_USER::text, inet_client_addr(), i_sql, NULL,  NULL, NULL, NULL);
+  RETURN true;
+
+END;
+$function$;
+
 
 CREATE EVENT TRIGGER @extschema@_ddl ON ddl_command_end EXECUTE FUNCTION @extschema@.write_ddl();
 CREATE EVENT TRIGGER @extschema@_drop ON sql_drop EXECUTE FUNCTION @extschema@.write_drop();
